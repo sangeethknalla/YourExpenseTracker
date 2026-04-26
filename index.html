@@ -140,11 +140,21 @@
   .ri-del-btn:active { background: #fecaca; }
   .ri-del-btn svg { width: 14px; height: 14px; }
 
-  /* ── Confirm modal ── */
-  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: flex; align-items: flex-end; justify-content: center; padding-bottom: var(--safe-bottom); }
-  .modal { background: var(--bg); border-radius: 16px 16px 0 0; padding: 20px 18px calc(var(--safe-bottom) + 16px); width: 100%; max-width: 430px; }
-  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
-  .modal-body { font-size: 14px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+  /* ── Confirm modal — lives on <body> not inside #app to avoid PWA overflow clipping ── */
+  .modal-overlay {
+    position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+    background: rgba(0,0,0,.5); z-index: 9999;
+    display: flex; align-items: flex-end; justify-content: center;
+  }
+  .modal {
+    background: var(--bg); border-radius: 20px 20px 0 0;
+    padding: 22px 20px 36px; width: 100%; max-width: 430px;
+    padding-bottom: max(36px, calc(env(safe-area-inset-bottom) + 20px));
+    animation: slideUp .22s ease;
+  }
+  @keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+  .modal-title { font-size: 17px; font-weight: 700; margin-bottom: 8px; }
+  .modal-body { font-size: 14px; color: var(--text2); margin-bottom: 20px; line-height: 1.6; }
   .modal-body strong { color: var(--text); }
   .btn-danger { background: var(--danger); color: #fff; }
   .btn-danger:active { opacity: .85; }
@@ -562,81 +572,141 @@ function renderRecent() {
     el.innerHTML = '<div style="color:var(--text3);font-size:14px;text-align:center;padding:3rem 0">No entries yet</div>';
     return;
   }
-  el.innerHTML = S.recent.slice(0, 30).map((e, i) => `
-    <div class="ri-wrap" id="wrap-${i}">
-      <div class="ri-delete-bg"><span>Delete</span></div>
-      <div class="ri" id="ri-${i}" data-idx="${i}"
-           ontouchstart="swipeStart(event,${i})"
-           ontouchmove="swipeMove(event,${i})"
-           ontouchend="swipeEnd(event,${i})">
-        <div class="ri-l">
-          <div class="ri-type">${e.expense}</div>
-          <div class="ri-meta">${e.month} · ${e.cell} · ${e.time}</div>
-        </div>
-        <div class="ri-right">
-          <div class="ri-amt">$${e.amount.toFixed(2)}</div>
-          <div class="ri-del-btn" onclick="confirmDelete(${i})">
-            <svg viewBox="0 0 16 16" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round">
-              <polyline points="3,4 13,4"/><path d="M5 4V3h6v1"/><path d="M5 4l.5 9h5L11 4"/>
-            </svg>
-          </div>
-        </div>
+  // Build rows as DOM nodes (not innerHTML) so we can attach real event listeners
+  // — inline ontouchstart is blocked by iOS PWA in some WebKit versions
+  el.innerHTML = '';
+  S.recent.slice(0, 30).forEach((entry, i) => {
+    const wrap = document.createElement('div');
+    wrap.className = 'ri-wrap'; wrap.id = 'wrap-' + i;
+
+    const bg = document.createElement('div');
+    bg.className = 'ri-delete-bg';
+    bg.innerHTML = '<span>Delete</span>';
+
+    const row = document.createElement('div');
+    row.className = 'ri'; row.id = 'ri-' + i;
+    row.innerHTML = `
+      <div class="ri-l">
+        <div class="ri-type">${entry.expense}</div>
+        <div class="ri-meta">${entry.month} · ${entry.cell} · ${entry.time}</div>
       </div>
-    </div>`).join('');
+      <div class="ri-right">
+        <div class="ri-amt">$${entry.amount.toFixed(2)}</div>
+        <div class="ri-del-btn" id="del-btn-${i}" style="min-width:38px;min-height:38px;">
+          <svg viewBox="0 0 16 16" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round">
+            <polyline points="3,4 13,4"/><path d="M5 4V3h6v1"/><path d="M5 4l.5 9h5L11 4"/>
+          </svg>
+        </div>
+      </div>`;
+
+    // ── Trash button: use touchend for reliability on iOS PWA ──
+    const delBtn = row.querySelector('.ri-del-btn');
+    delBtn.addEventListener('touchend', function(ev) {
+      ev.preventDefault(); ev.stopPropagation();
+      confirmDelete(i);
+    }, { passive: false });
+    delBtn.addEventListener('click', function(ev) {
+      ev.stopPropagation();
+      confirmDelete(i);
+    });
+
+    // ── Swipe-to-delete via proper addEventListener ──
+    let swX = null, swMoved = false;
+    row.addEventListener('touchstart', function(ev) {
+      // don't start swipe if tapping the delete button
+      if (ev.target.closest('.ri-del-btn')) return;
+      swX = ev.touches[0].clientX; swMoved = false;
+    }, { passive: true });
+
+    row.addEventListener('touchmove', function(ev) {
+      if (swX === null) return;
+      const dx = ev.touches[0].clientX - swX;
+      if (Math.abs(dx) > 8) swMoved = true;
+      if (dx < -8) {
+        const clamped = Math.max(dx, -80);
+        row.style.transition = 'none';
+        row.style.transform = `translateX(${clamped}px)`;
+      } else if (dx > 5) {
+        row.style.transition = 'transform .2s ease';
+        row.style.transform = '';
+        row.classList.remove('swiped');
+      }
+    }, { passive: true });
+
+    row.addEventListener('touchend', function(ev) {
+      if (swX === null) return;
+      const dx = ev.changedTouches[0].clientX - swX;
+      row.style.transition = 'transform .25s ease';
+      if (dx < -50) {
+        row.style.transform = 'translateX(-80px)';
+        row.classList.add('swiped');
+      } else {
+        row.style.transform = '';
+        row.classList.remove('swiped');
+      }
+      swX = null;
+    }, { passive: true });
+
+    wrap.appendChild(bg);
+    wrap.appendChild(row);
+    el.appendChild(wrap);
+  });
 }
 
-// ── Swipe-to-delete (touch) ──
-const _sw = {};
-function swipeStart(e, i) {
-  _sw[i] = { x: e.touches[0].clientX, swiped: false };
-}
-function swipeMove(e, i) {
-  if (!_sw[i]) return;
-  const dx = e.touches[0].clientX - _sw[i].x;
-  const el = document.getElementById('ri-'+i);
-  if (dx < -10) { el.style.transform = `translateX(${Math.max(dx,-80)}px)`; _sw[i].moving = true; }
-  if (dx > 5 && el.classList.contains('swiped')) { el.style.transform = ''; el.classList.remove('swiped'); }
-}
-function swipeEnd(e, i) {
-  if (!_sw[i]) return;
-  const dx = e.changedTouches[0].clientX - _sw[i].x;
-  const el = document.getElementById('ri-'+i);
-  if (dx < -50) { el.style.transform = ''; el.classList.add('swiped'); _sw[i].swiped = true; }
-  else { el.style.transform = ''; el.classList.remove('swiped'); }
-  if (_sw[i].swiped && dx > 20) { el.style.transform = ''; el.classList.remove('swiped'); }
-  // tap on swiped row = confirm delete
-  if (_sw[i].swiped && !_sw[i].moving) confirmDelete(i);
-  delete _sw[i];
-}
-
-// ── Confirm modal ──
+// ── Confirm modal — appended to document.body so iOS PWA doesn't clip it ──
 function confirmDelete(idx) {
-  const e = S.recent[idx];
-  if (!e) return;
-  // remove any existing modal
+  const entry = S.recent[idx];
+  if (!entry) return;
   const old = document.getElementById('delModal');
   if (old) old.remove();
-  const m = document.createElement('div');
-  m.className = 'modal-overlay'; m.id = 'delModal';
-  m.innerHTML = `
-    <div class="modal">
-      <div class="modal-title">Delete this entry?</div>
-      <div class="modal-body">
-        <strong>${e.expense}</strong> — ${e.month} — <strong>$${e.amount.toFixed(2)}</strong><br>
-        Cell <strong>${e.cell}</strong> will be cleared in your Google Sheet.
-      </div>
-      <button class="btn btn-danger" onclick="doDelete(${idx})">Clear from Sheet &amp; Remove</button>
-      <button class="btn btn-outline" style="margin-top:10px" onclick="closeModal()">Cancel</button>
+
+  const overlay = document.createElement('div');
+  overlay.className = 'modal-overlay'; overlay.id = 'delModal';
+
+  const sheet = document.createElement('div');
+  sheet.className = 'modal';
+  sheet.innerHTML = `
+    <div class="modal-title">Delete this entry?</div>
+    <div class="modal-body">
+      <strong>${entry.expense}</strong> — ${entry.month} — <strong>$${entry.amount.toFixed(2)}</strong><br>
+      Cell <strong>${entry.cell}</strong> will be cleared in your Google Sheet.
     </div>`;
-  m.addEventListener('click', ev => { if (ev.target === m) closeModal(); });
-  document.getElementById('app').appendChild(m);
+
+  const btnDel = document.createElement('button');
+  btnDel.className = 'btn btn-danger';
+  btnDel.textContent = 'Clear from Sheet & Remove';
+  btnDel.addEventListener('touchend', function(ev) { ev.preventDefault(); doDelete(idx); }, { passive: false });
+  btnDel.addEventListener('click', function() { doDelete(idx); });
+
+  const btnCan = document.createElement('button');
+  btnCan.className = 'btn btn-outline';
+  btnCan.textContent = 'Cancel';
+  btnCan.style.marginTop = '10px';
+  btnCan.addEventListener('touchend', function(ev) { ev.preventDefault(); closeModal(); }, { passive: false });
+  btnCan.addEventListener('click', function() { closeModal(); });
+
+  sheet.appendChild(btnDel);
+  sheet.appendChild(btnCan);
+  overlay.appendChild(sheet);
+
+  // tap backdrop to dismiss
+  overlay.addEventListener('touchend', function(ev) {
+    if (ev.target === overlay) { ev.preventDefault(); closeModal(); }
+  }, { passive: false });
+  overlay.addEventListener('click', function(ev) {
+    if (ev.target === overlay) closeModal();
+  });
+
+  // Attach to body — NOT #app — so iOS PWA doesn't clip with overflow:hidden
+  document.body.appendChild(overlay);
 }
 
 function closeModal() {
   const m = document.getElementById('delModal');
   if (m) m.remove();
-  // un-swipe any swiped rows
-  document.querySelectorAll('.ri.swiped').forEach(el => el.classList.remove('swiped'));
+  document.querySelectorAll('.ri.swiped').forEach(el => {
+    el.style.transform = ''; el.classList.remove('swiped');
+  });
 }
 
 async function doDelete(idx) {
