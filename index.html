@@ -125,12 +125,29 @@
   .divider { height: 1px; background: var(--border); margin: 16px 0; }
 
   /* ── Recent list ── */
-  .ri { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg2); border-radius: 10px; border: 1px solid var(--border); }
-  .ri + .ri { margin-top: 8px; }
+  .ri-wrap { position: relative; margin-bottom: 8px; border-radius: 10px; overflow: hidden; }
+  .ri-delete-bg { position: absolute; inset: 0; background: var(--danger); display: flex; align-items: center; justify-content: flex-end; padding-right: 20px; border-radius: 10px; }
+  .ri-delete-bg span { color: #fff; font-size: 13px; font-weight: 600; }
+  .ri { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg2); border-radius: 10px; border: 1px solid var(--border); position: relative; transition: transform .25s ease; touch-action: pan-y; user-select: none; }
+  .ri.swiped { transform: translateX(-80px); }
+  .ri.deleting { opacity: 0; transform: translateX(-100%); transition: opacity .25s, transform .3s; }
   .ri-l { display: flex; flex-direction: column; gap: 3px; }
   .ri-type { font-size: 14px; font-weight: 600; }
   .ri-meta { font-size: 11px; color: var(--text3); }
+  .ri-right { display: flex; align-items: center; gap: 10px; }
   .ri-amt { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--success); }
+  .ri-del-btn { width: 30px; height: 30px; border-radius: 50%; background: var(--bg3); border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; cursor: pointer; flex-shrink: 0; transition: background .15s; }
+  .ri-del-btn:active { background: #fecaca; }
+  .ri-del-btn svg { width: 14px; height: 14px; }
+
+  /* ── Confirm modal ── */
+  .modal-overlay { position: fixed; inset: 0; background: rgba(0,0,0,.45); z-index: 100; display: flex; align-items: flex-end; justify-content: center; padding-bottom: var(--safe-bottom); }
+  .modal { background: var(--bg); border-radius: 16px 16px 0 0; padding: 20px 18px calc(var(--safe-bottom) + 16px); width: 100%; max-width: 430px; }
+  .modal-title { font-size: 16px; font-weight: 700; margin-bottom: 6px; }
+  .modal-body { font-size: 14px; color: var(--text2); margin-bottom: 18px; line-height: 1.5; }
+  .modal-body strong { color: var(--text); }
+  .btn-danger { background: var(--danger); color: #fff; }
+  .btn-danger:active { opacity: .85; }
 
   /* ── Token section ── */
   #tokenArea { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
@@ -538,21 +555,126 @@ function addRecent(entry) {
   renderRecent();
 }
 
-// ─── Recent ───────────────────────────────────────────────────────────────
+// ─── Recent + Delete ──────────────────────────────────────────────────────
 function renderRecent() {
   const el = document.getElementById('recentList');
   if (!S.recent.length) {
     el.innerHTML = '<div style="color:var(--text3);font-size:14px;text-align:center;padding:3rem 0">No entries yet</div>';
     return;
   }
-  el.innerHTML = S.recent.slice(0, 30).map(e => `
-    <div class="ri">
-      <div class="ri-l">
-        <div class="ri-type">${e.expense}</div>
-        <div class="ri-meta">${e.month} · ${e.cell} · ${e.time}</div>
+  el.innerHTML = S.recent.slice(0, 30).map((e, i) => `
+    <div class="ri-wrap" id="wrap-${i}">
+      <div class="ri-delete-bg"><span>Delete</span></div>
+      <div class="ri" id="ri-${i}" data-idx="${i}"
+           ontouchstart="swipeStart(event,${i})"
+           ontouchmove="swipeMove(event,${i})"
+           ontouchend="swipeEnd(event,${i})">
+        <div class="ri-l">
+          <div class="ri-type">${e.expense}</div>
+          <div class="ri-meta">${e.month} · ${e.cell} · ${e.time}</div>
+        </div>
+        <div class="ri-right">
+          <div class="ri-amt">$${e.amount.toFixed(2)}</div>
+          <div class="ri-del-btn" onclick="confirmDelete(${i})">
+            <svg viewBox="0 0 16 16" fill="none" stroke="var(--danger)" stroke-width="1.5" stroke-linecap="round">
+              <polyline points="3,4 13,4"/><path d="M5 4V3h6v1"/><path d="M5 4l.5 9h5L11 4"/>
+            </svg>
+          </div>
+        </div>
       </div>
-      <div class="ri-amt">$${e.amount.toFixed(2)}</div>
     </div>`).join('');
+}
+
+// ── Swipe-to-delete (touch) ──
+const _sw = {};
+function swipeStart(e, i) {
+  _sw[i] = { x: e.touches[0].clientX, swiped: false };
+}
+function swipeMove(e, i) {
+  if (!_sw[i]) return;
+  const dx = e.touches[0].clientX - _sw[i].x;
+  const el = document.getElementById('ri-'+i);
+  if (dx < -10) { el.style.transform = `translateX(${Math.max(dx,-80)}px)`; _sw[i].moving = true; }
+  if (dx > 5 && el.classList.contains('swiped')) { el.style.transform = ''; el.classList.remove('swiped'); }
+}
+function swipeEnd(e, i) {
+  if (!_sw[i]) return;
+  const dx = e.changedTouches[0].clientX - _sw[i].x;
+  const el = document.getElementById('ri-'+i);
+  if (dx < -50) { el.style.transform = ''; el.classList.add('swiped'); _sw[i].swiped = true; }
+  else { el.style.transform = ''; el.classList.remove('swiped'); }
+  if (_sw[i].swiped && dx > 20) { el.style.transform = ''; el.classList.remove('swiped'); }
+  // tap on swiped row = confirm delete
+  if (_sw[i].swiped && !_sw[i].moving) confirmDelete(i);
+  delete _sw[i];
+}
+
+// ── Confirm modal ──
+function confirmDelete(idx) {
+  const e = S.recent[idx];
+  if (!e) return;
+  // remove any existing modal
+  const old = document.getElementById('delModal');
+  if (old) old.remove();
+  const m = document.createElement('div');
+  m.className = 'modal-overlay'; m.id = 'delModal';
+  m.innerHTML = `
+    <div class="modal">
+      <div class="modal-title">Delete this entry?</div>
+      <div class="modal-body">
+        <strong>${e.expense}</strong> — ${e.month} — <strong>$${e.amount.toFixed(2)}</strong><br>
+        Cell <strong>${e.cell}</strong> will be cleared in your Google Sheet.
+      </div>
+      <button class="btn btn-danger" onclick="doDelete(${idx})">Clear from Sheet &amp; Remove</button>
+      <button class="btn btn-outline" style="margin-top:10px" onclick="closeModal()">Cancel</button>
+    </div>`;
+  m.addEventListener('click', ev => { if (ev.target === m) closeModal(); });
+  document.getElementById('app').appendChild(m);
+}
+
+function closeModal() {
+  const m = document.getElementById('delModal');
+  if (m) m.remove();
+  // un-swipe any swiped rows
+  document.querySelectorAll('.ri.swiped').forEach(el => el.classList.remove('swiped'));
+}
+
+async function doDelete(idx) {
+  closeModal();
+  const entry = S.recent[idx];
+  if (!entry) return;
+
+  // Animate out
+  const wrap = document.getElementById('wrap-'+idx);
+  const ri   = document.getElementById('ri-'+idx);
+  if (ri) ri.classList.add('deleting');
+  await new Promise(r => setTimeout(r, 320));
+
+  // Remove from local list
+  S.recent.splice(idx, 1);
+  try { localStorage.setItem('et_recent', JSON.stringify(S.recent.slice(0,50))); } catch(e2) {}
+  renderRecent();
+
+  if (S.demo) {
+    toast('Deleted (demo — no sheet change)', 'ok');
+    return;
+  }
+
+  // Clear the cell in Google Sheets
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${S.sheetId}/values/${encodeURIComponent(entry.cell)}:clear`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: { 'Authorization': 'Bearer ' + S.token, 'Content-Type': 'application/json' }
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+    toast(`Cleared ${entry.cell} in sheet`, 'ok');
+    if (navigator.vibrate) navigator.vibrate([20, 40, 20]);
+  } catch(e2) {
+    const msg = e2.message.includes('401') ? 'Token expired — re-paste in Setup' : e2.message;
+    toast('Sheet error: ' + msg, 'err');
+  }
 }
 
 // Restore recent from localStorage
