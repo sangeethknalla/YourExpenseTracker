@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<title>Expense Tracker</title>
+
+<!-- PWA / iOS Home Screen -->
+<meta name="apple-mobile-web-app-capable" content="yes" />
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />
+<meta name="apple-mobile-web-app-title" content="Expenses" />
+<meta name="mobile-web-app-capable" content="yes" />
+<meta name="theme-color" content="#0f172a" />
+
+<!-- iOS splash / icon (inline SVG as data URI so no extra files needed) -->
+<link rel="apple-touch-icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 180 180'%3E%3Crect width='180' height='180' rx='40' fill='%230f172a'/%3E%3Ctext x='90' y='115' font-size='80' text-anchor='middle' font-family='system-ui' fill='white'%3E💸%3C/text%3E%3C/svg%3E" />
+
+<style>
+  :root {
+    --bg: #ffffff;
+    --bg2: #f8fafc;
+    --bg3: #f1f5f9;
+    --text: #0f172a;
+    --text2: #64748b;
+    --text3: #94a3b8;
+    --border: #e2e8f0;
+    --border2: #cbd5e1;
+    --accent: #0f172a;
+    --accent-fg: #ffffff;
+    --success: #16a34a;
+    --danger: #dc2626;
+    --safe-top: env(safe-area-inset-top, 0px);
+    --safe-bottom: env(safe-area-inset-bottom, 0px);
+  }
+  @media (prefers-color-scheme: dark) {
+    :root {
+      --bg: #0f172a;
+      --bg2: #1e293b;
+      --bg3: #334155;
+      --text: #f1f5f9;
+      --text2: #94a3b8;
+      --text3: #64748b;
+      --border: #1e293b;
+      --border2: #334155;
+      --accent: #f1f5f9;
+      --accent-fg: #0f172a;
+    }
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; -webkit-tap-highlight-color: transparent; }
+  html, body { height: 100%; overflow: hidden; font-family: -apple-system, 'SF Pro Display', 'Helvetica Neue', sans-serif; background: var(--bg); color: var(--text); }
+
+  /* ── Layout ── */
+  #app { display: flex; flex-direction: column; height: 100vh; height: 100dvh; max-width: 430px; margin: 0 auto; }
+  .hdr {
+    background: #0f172a;
+    padding: calc(var(--safe-top) + 14px) 18px 14px;
+    flex-shrink: 0;
+  }
+  .hdr-row { display: flex; align-items: center; justify-content: space-between; }
+  .hdr-title { font-size: 18px; font-weight: 700; color: #fff; letter-spacing: -.4px; }
+  .hdr-sub { font-size: 11px; color: rgba(255,255,255,.45); margin-top: 3px; font-variant-numeric: tabular-nums; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  .dot { width: 7px; height: 7px; border-radius: 50%; display: inline-block; margin-right: 5px; vertical-align: middle; }
+  .dot-on  { background: #4ade80; }
+  .dot-off { background: #f87171; }
+  .dot-spin{ background: #fbbf24; animation: blink .9s infinite; }
+  @keyframes blink { 0%,100%{opacity:1} 50%{opacity:.3} }
+
+  /* ── Tabs ── */
+  .tabs { display: flex; background: var(--bg); border-bottom: 1px solid var(--border); flex-shrink: 0; }
+  .tab { flex: 1; padding: 11px 6px; font-size: 13px; font-weight: 500; text-align: center; color: var(--text2); border-bottom: 2px solid transparent; cursor: pointer; transition: color .15s, border-color .15s; user-select: none; }
+  .tab.active { color: var(--text); border-bottom-color: var(--text); }
+
+  /* ── Scroll body ── */
+  .view { flex: 1; overflow-y: auto; -webkit-overflow-scrolling: touch; overscroll-behavior: contain; }
+  .sec { padding: 16px 18px calc(var(--safe-bottom) + 24px); }
+
+  /* ── Form ── */
+  .fg { margin-bottom: 14px; }
+  .fl { font-size: 13px; font-weight: 600; color: var(--text2); margin-bottom: 6px; }
+  select, input[type=text], input[type=number], input[type=password] {
+    width: 100%; padding: 12px 14px;
+    border: 1px solid var(--border2); border-radius: 10px;
+    font-size: 15px; font-family: inherit;
+    background: var(--bg); color: var(--text);
+    appearance: none; -webkit-appearance: none;
+    outline: none; transition: border-color .15s;
+  }
+  select:focus, input:focus { border-color: #0f172a; }
+  select { background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='7'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%2394a3b8' stroke-width='1.5' fill='none' stroke-linecap='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; padding-right: 34px; }
+  .row2 { display: flex; gap: 10px; }
+  .row2 > * { flex: 1; }
+  .amt-row { display: flex; gap: 8px; align-items: center; }
+  .cur-badge { background: var(--bg3); border: 1px solid var(--border); border-radius: 10px; padding: 12px 13px; font-size: 14px; color: var(--text2); white-space: nowrap; }
+
+  /* ── Buttons ── */
+  .btn { width: 100%; padding: 14px; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; font-family: inherit; border: none; transition: opacity .15s, transform .1s; }
+  .btn:active { transform: scale(.97); opacity: .85; }
+  .btn-dark { background: #0f172a; color: #fff; }
+  .btn-dark:disabled { opacity: .4; cursor: not-allowed; }
+  .btn-outline { background: var(--bg); color: var(--text2); border: 1px solid var(--border2); margin-top: 10px; }
+  .btn-google { background: var(--bg); color: #3c4043; border: 1px solid var(--border2); display: flex; align-items: center; justify-content: center; gap: 10px; }
+  @media (prefers-color-scheme: dark) {
+    .btn-dark { background: #f1f5f9; color: #0f172a; }
+    .btn-google { color: var(--text); }
+  }
+
+  /* ── Cards / info ── */
+  .infobox { background: var(--bg2); border: 1px solid var(--border); border-radius: 10px; padding: 12px 14px; margin-bottom: 14px; font-size: 13px; color: var(--text2); line-height: 1.65; }
+  .infobox strong { color: var(--text); }
+  .infobox a { color: #2563eb; }
+  .step-num { display: inline-flex; align-items: center; justify-content: center; width: 20px; height: 20px; background: #0f172a; color: #fff; border-radius: 50%; font-size: 11px; font-weight: 700; margin-right: 6px; vertical-align: middle; }
+  @media (prefers-color-scheme: dark) { .step-num { background: #f1f5f9; color: #0f172a; } }
+
+  /* ── Month tags ── */
+  .tags { display: flex; flex-wrap: wrap; gap: 6px; margin-top: 8px; }
+  .tag { padding: 5px 11px; border-radius: 20px; font-size: 12px; font-weight: 500; background: var(--bg3); border: 1px solid var(--border); color: var(--text2); cursor: pointer; user-select: none; transition: background .12s, color .12s; }
+  .tag.on { background: #0f172a; color: #fff; border-color: #0f172a; }
+  @media (prefers-color-scheme: dark) { .tag.on { background: #f1f5f9; color: #0f172a; border-color: #f1f5f9; } }
+
+  /* ── Cell preview ── */
+  .cell-prev { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 13px; margin-top: 8px; font-size: 12px; color: var(--text2); font-variant-numeric: tabular-nums; }
+  .cell-prev span { color: var(--success); font-weight: 600; font-family: 'SF Mono', 'Menlo', monospace; }
+
+  /* ── Divider ── */
+  .divider { height: 1px; background: var(--border); margin: 16px 0; }
+
+  /* ── Recent list ── */
+  .ri { display: flex; justify-content: space-between; align-items: center; padding: 12px 14px; background: var(--bg2); border-radius: 10px; border: 1px solid var(--border); }
+  .ri + .ri { margin-top: 8px; }
+  .ri-l { display: flex; flex-direction: column; gap: 3px; }
+  .ri-type { font-size: 14px; font-weight: 600; }
+  .ri-meta { font-size: 11px; color: var(--text3); }
+  .ri-amt { font-size: 15px; font-weight: 700; font-variant-numeric: tabular-nums; color: var(--success); }
+
+  /* ── Token section ── */
+  #tokenArea { margin-top: 12px; padding-top: 12px; border-top: 1px solid var(--border); }
+  .mono { font-family: 'SF Mono', 'Menlo', monospace; font-size: 11px; color: var(--text3); line-height: 1.7; }
+  .mono a { color: #2563eb; }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; bottom: calc(var(--safe-bottom) + 20px); left: 50%;
+    transform: translateX(-50%) translateY(10px);
+    background: #0f172a; color: #fff; padding: 10px 20px;
+    border-radius: 22px; font-size: 13px; font-weight: 500;
+    white-space: nowrap; opacity: 0; transition: opacity .25s, transform .25s;
+    pointer-events: none; z-index: 999; max-width: 90vw;
+  }
+  .toast.show { opacity: 1; transform: translateX(-50%) translateY(0); }
+  .toast.err { background: var(--danger); }
+  .toast.ok  { background: var(--success); }
+
+  /* ── Utility ── */
+  .hidden { display: none !important; }
+  label.lbl-section { display: block; font-size: 11px; font-weight: 600; color: var(--text3); letter-spacing: .5px; text-transform: uppercase; margin-bottom: 10px; }
+</style>
+</head>
+<body>
+
+<div id="app">
+
+  <!-- Header -->
+  <div class="hdr">
+    <div class="hdr-row">
+      <span class="hdr-title">💸 Expense Tracker</span>
+      <span style="font-size:12px;color:rgba(255,255,255,.65)">
+        <span class="dot dot-off" id="sDot"></span><span id="sTxt">Not connected</span>
+      </span>
+    </div>
+    <div class="hdr-sub" id="sSheet">Connect your Google Sheet in Setup</div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <div class="tab active" id="tab-log"    onclick="go('log')">Log Expense</div>
+    <div class="tab"        id="tab-setup"  onclick="go('setup')">Setup</div>
+    <div class="tab"        id="tab-recent" onclick="go('recent')">Recent</div>
+  </div>
+
+  <!-- ── LOG VIEW ── -->
+  <div class="view" id="view-log">
+    <div class="sec">
+      <div id="notConn" class="infobox">
+        <strong>Not connected.</strong> Go to the <strong>Setup</strong> tab to sign in and connect your sheet.
+      </div>
+
+      <div class="fg">
+        <div class="fl">Month</div>
+        <select id="selM" disabled onchange="updateCell()"><option value="">— select month —</option></select>
+        <div class="tags" id="mTags"></div>
+      </div>
+
+      <div class="fg">
+        <div class="fl">Expense type</div>
+        <select id="selE" disabled onchange="updateCell()"><option value="">— select expense —</option></select>
+      </div>
+
+      <div class="fg">
+        <div class="fl">Amount</div>
+        <div class="amt-row">
+          <span class="cur-badge">CAD $</span>
+          <input type="number" id="inpAmt" placeholder="0.00" step="0.01" min="0" disabled />
+        </div>
+      </div>
+
+      <div id="cellPrev" class="cell-prev hidden">
+        Will write to: <span id="cellRef">—</span>
+      </div>
+
+      <br>
+      <button class="btn btn-dark" id="btnSave" onclick="save()" disabled>Save to Google Sheets</button>
+    </div>
+  </div>
+
+  <!-- ── SETUP VIEW ── -->
+  <div class="view hidden" id="view-setup">
+    <div class="sec">
+
+      <label class="lbl-section">Step 1 — Sign in with Google</label>
+      <div class="infobox">
+        Google requires you to authenticate before the app can write to your spreadsheet. Use one of the two options below.
+      </div>
+
+      <button class="btn btn-google" onclick="startOAuth()">
+        <svg width="18" height="18" viewBox="0 0 24 24"><path d="M22.56 12.25c0-.78-.07-1.53-.2-2.25H12v4.26h5.92c-.26 1.37-1.04 2.53-2.21 3.31v2.77h3.57c2.08-1.92 3.28-4.74 3.28-8.09z" fill="#4285F4"/><path d="M12 23c2.97 0 5.46-.98 7.28-2.66l-3.57-2.77c-.98.66-2.23 1.06-3.71 1.06-2.86 0-5.29-1.93-6.16-4.53H2.18v2.84C3.99 20.53 7.7 23 12 23z" fill="#34A853"/><path d="M5.84 14.09c-.22-.66-.35-1.36-.35-2.09s.13-1.43.35-2.09V7.07H2.18C1.43 8.55 1 10.22 1 12s.43 3.45 1.18 4.93l3.66-2.84z" fill="#FBBC05"/><path d="M12 5.38c1.62 0 3.06.56 4.21 1.64l3.15-3.15C17.45 2.09 14.97 1 12 1 7.7 1 3.99 3.47 2.18 7.07l3.66 2.84c.87-2.6 3.3-4.53 6.16-4.53z" fill="#EA4335"/></svg>
+        Sign in with Google (OAuth popup)
+      </button>
+
+      <div id="tokenArea">
+        <div class="fl" style="margin-bottom:8px">Or paste an access token directly</div>
+        <div style="display:flex;gap:8px">
+          <input type="password" id="inpTok" placeholder="ya29.a0A…" style="flex:1" />
+          <button class="btn btn-dark" style="width:auto;padding:12px 16px" onclick="applyToken()">Apply</button>
+        </div>
+        <div class="mono" style="margin-top:8px">
+          Get a token from <a href="https://developers.google.com/oauthplayground" onclick="openLink('https://developers.google.com/oauthplayground');return false">OAuth Playground</a><br>
+          Scope: <code>https://www.googleapis.com/auth/spreadsheets</code>
+        </div>
+      </div>
+
+      <div class="divider"></div>
+      <label class="lbl-section">Step 2 — Spreadsheet settings</label>
+
+      <div class="fg">
+        <div class="fl">Spreadsheet ID</div>
+        <input type="text" id="inpSID" placeholder="1BxiMVs0XRA5nFMdKvBdBZjgmUUq…" />
+        <div class="mono" style="margin-top:5px">From URL: …/spreadsheets/d/<strong>YOUR_ID</strong>/edit</div>
+      </div>
+
+      <div class="row2">
+        <div class="fg">
+          <div class="fl">Tab name</div>
+          <input type="text" id="inpTab" value="Sheet1" />
+        </div>
+        <div class="fg">
+          <div class="fl">Header row #</div>
+          <input type="number" id="inpHRow" value="1" min="1" />
+        </div>
+      </div>
+
+      <div class="row2">
+        <div class="fg">
+          <div class="fl">Months start col</div>
+          <input type="text" id="inpMCol" value="B" maxlength="2" style="text-align:center" />
+        </div>
+        <div class="fg">
+          <div class="fl">Expense label col</div>
+          <input type="text" id="inpECol" value="A" maxlength="2" style="text-align:center" />
+        </div>
+      </div>
+
+      <button class="btn btn-dark" id="btnLoad" onclick="loadSheet()">Load Sheet &amp; Connect</button>
+      <button class="btn btn-outline" onclick="loadDemo()">Try demo (no sheet needed)</button>
+    </div>
+  </div>
+
+  <!-- ── RECENT VIEW ── -->
+  <div class="view hidden" id="view-recent">
+    <div class="sec">
+      <label class="lbl-section">Recent entries</label>
+      <div id="recentList">
+        <div style="color:var(--text3);font-size:14px;text-align:center;padding:3rem 0">No entries yet</div>
+      </div>
+    </div>
+  </div>
+
+</div><!-- /app -->
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ─── State ────────────────────────────────────────────────────────────────
+const S = {
+  token: null, sheetId: '', tab: 'Sheet1',
+  hRow: 1, mCol: 'B', eCol: 'A',
+  months: [], expenses: [], recent: [], demo: false
+};
+
+// Restore saved settings from localStorage
+try {
+  const saved = JSON.parse(localStorage.getItem('et_config')||'{}');
+  if (saved.sheetId) document.getElementById('inpSID').value = saved.sheetId;
+  if (saved.tab)     document.getElementById('inpTab').value  = saved.tab;
+  if (saved.hRow)    document.getElementById('inpHRow').value = saved.hRow;
+  if (saved.mCol)    document.getElementById('inpMCol').value = saved.mCol;
+  if (saved.eCol)    document.getElementById('inpECol').value = saved.eCol;
+} catch(e) {}
+
+// ─── Helpers ──────────────────────────────────────────────────────────────
+let toastTimer;
+function toast(msg, type='') {
+  const el = document.getElementById('toast');
+  el.textContent = msg;
+  el.className = 'toast show' + (type ? ' '+type : '');
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(() => el.className = 'toast', 2800);
+}
+
+function go(t) {
+  ['log','setup','recent'].forEach(id => {
+    document.getElementById('view-'+id).classList.toggle('hidden', id!==t);
+    document.getElementById('tab-'+id).classList.toggle('active', id===t);
+  });
+}
+
+function colShift(base, offset) {
+  base = base.trim().toUpperCase();
+  if (base.length === 1) return String.fromCharCode(base.charCodeAt(0) + offset);
+  // two-letter column (e.g. AA) — basic support
+  if (base.length === 2) {
+    let n = (base.charCodeAt(0)-64)*26 + (base.charCodeAt(1)-64) + offset;
+    const c1 = Math.floor((n-1)/26);
+    const c2 = ((n-1)%26)+1;
+    return (c1>0 ? String.fromCharCode(64+c1) : '') + String.fromCharCode(64+c2);
+  }
+  return base;
+}
+
+function setStatus(state, label, sub) {
+  const dot = document.getElementById('sDot');
+  dot.className = 'dot ' + (state==='on' ? 'dot-on' : state==='loading' ? 'dot-spin' : 'dot-off');
+  document.getElementById('sTxt').textContent = label;
+  if (sub !== undefined) document.getElementById('sSheet').textContent = sub;
+}
+
+// ─── Auth ─────────────────────────────────────────────────────────────────
+function startOAuth() {
+  const cid = prompt('Paste your Google OAuth 2.0 Client ID\n(from Google Cloud Console → Credentials → OAuth 2.0 Client IDs)\n\nLeave blank to use the manual token option instead:');
+  if (!cid) { document.getElementById('inpTok').focus(); toast('Paste your access token in the field below'); return; }
+  const scope = encodeURIComponent('https://www.googleapis.com/auth/spreadsheets');
+  const redirect = encodeURIComponent(location.href.split('?')[0].split('#')[0]);
+  const url = `https://accounts.google.com/o/oauth2/v2/auth?client_id=${encodeURIComponent(cid)}&redirect_uri=${redirect}&response_type=token&scope=${scope}&prompt=consent`;
+  window.open(url, '_blank', 'width=480,height=600,menubar=no,toolbar=no');
+  toast('Complete sign-in in the popup, then paste the token below');
+}
+
+function applyToken() {
+  const t = document.getElementById('inpTok').value.trim();
+  if (!t || !t.startsWith('ya29')) { toast('Paste a valid access token (starts with ya29.)', 'err'); return; }
+  S.token = t;
+  setStatus('on', 'Token applied', 'Token ready — now load your sheet below');
+  toast('Token applied!', 'ok');
+}
+
+// Check for token in URL hash (after OAuth redirect)
+(function checkHash() {
+  const hash = new URLSearchParams(location.hash.replace('#',''));
+  const t = hash.get('access_token');
+  if (t) {
+    S.token = t;
+    history.replaceState(null, '', location.pathname);
+    setStatus('on', 'Signed in', 'Token received — load your sheet below');
+    toast('Signed in with Google!', 'ok');
+    go('setup');
+  }
+})();
+
+// ─── Sheet loading ────────────────────────────────────────────────────────
+async function loadSheet() {
+  const sid  = document.getElementById('inpSID').value.trim();
+  const tab  = document.getElementById('inpTab').value.trim() || 'Sheet1';
+  const hRow = parseInt(document.getElementById('inpHRow').value) || 1;
+  const mCol = document.getElementById('inpMCol').value.trim().toUpperCase() || 'B';
+  const eCol = document.getElementById('inpECol').value.trim().toUpperCase() || 'A';
+  if (!sid)     { toast('Enter your Spreadsheet ID', 'err'); return; }
+  if (!S.token) { toast('Apply an access token first', 'err'); return; }
+
+  Object.assign(S, { sheetId: sid, tab, hRow, mCol, eCol });
+  try { localStorage.setItem('et_config', JSON.stringify({ sheetId: sid, tab, hRow, mCol, eCol })); } catch(e) {}
+
+  const btn = document.getElementById('btnLoad');
+  btn.disabled = true; btn.textContent = 'Connecting…';
+  setStatus('loading', 'Loading…', 'Reading sheet…');
+
+  try {
+    const endMCol = colShift(mCol, 12);
+    const rMonths = `${tab}!${mCol}${hRow}:${endMCol}${hRow}`;
+    const rExp    = `${tab}!${eCol}${hRow+1}:${eCol}200`;
+    const hdrs    = { Authorization: 'Bearer ' + S.token };
+    const base    = `https://sheets.googleapis.com/v4/spreadsheets/${sid}/values/`;
+
+    const [r1, r2] = await Promise.all([
+      fetch(base + encodeURIComponent(rMonths), { headers: hdrs }).then(r => r.json()),
+      fetch(base + encodeURIComponent(rExp),    { headers: hdrs }).then(r => r.json())
+    ]);
+
+    if (r1.error) throw new Error(r1.error.message);
+    if (r2.error) throw new Error(r2.error.message);
+
+    S.months   = (r1.values?.[0] || []).map(v => v.trim()).filter(Boolean);
+    S.expenses = (r2.values || []).map(r => r[0]?.trim()).filter(Boolean);
+
+    if (!S.months.length)   throw new Error(`No months found in row ${hRow}, col ${mCol}`);
+    if (!S.expenses.length) throw new Error(`No expenses found in col ${eCol}`);
+
+    activateForm();
+    toast(`Connected! ${S.months.length} months, ${S.expenses.length} expense types`, 'ok');
+    go('log');
+  } catch(e) {
+    setStatus('off', 'Error', e.message);
+    toast(e.message, 'err');
+  }
+  btn.disabled = false; btn.textContent = 'Load Sheet & Connect';
+}
+
+function loadDemo() {
+  S.demo = true;
+  S.months   = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
+  S.expenses = ['Internet Bill','Mortgage','Credit Card','Groceries','Utilities','Car Payment','Insurance','Subscriptions'];
+  S.sheetId  = 'demo'; S.tab = 'Sheet1'; S.hRow = 1; S.mCol = 'B'; S.eCol = 'A';
+  activateForm();
+  go('log');
+  toast('Demo mode — entries stay local only');
+}
+
+// ─── Form ─────────────────────────────────────────────────────────────────
+function activateForm() {
+  const suffix = S.demo ? 'Demo mode' : S.sheetId.substring(0,22)+'…';
+  setStatus('on', S.demo ? 'Demo' : 'Connected', suffix);
+  document.getElementById('notConn').classList.add('hidden');
+
+  const mSel = document.getElementById('selM');
+  const eSel = document.getElementById('selE');
+  mSel.innerHTML = '<option value="">— select month —</option>' + S.months.map(m=>`<option value="${m}">${m}</option>`).join('');
+  eSel.innerHTML = '<option value="">— select expense —</option>' + S.expenses.map(e=>`<option value="${e}">${e}</option>`).join('');
+
+  ['selM','selE','inpAmt','btnSave'].forEach(id => document.getElementById(id).disabled = false);
+
+  // Month quick-tap tags
+  document.getElementById('mTags').innerHTML = S.months.map(m =>
+    `<span class="tag" onclick="pickMonth(this,'${m}')">${m}</span>`
+  ).join('');
+
+  updateCell();
+}
+
+function pickMonth(el, m) {
+  document.querySelectorAll('#mTags .tag').forEach(t => t.classList.remove('on'));
+  el.classList.add('on');
+  document.getElementById('selM').value = m;
+  updateCell();
+}
+
+function updateCell() {
+  const m = document.getElementById('selM').value;
+  const e = document.getElementById('selE').value;
+  const prev = document.getElementById('cellPrev');
+  if (!m || !e) { prev.classList.add('hidden'); return; }
+  const mIdx = S.months.indexOf(m);
+  const eIdx = S.expenses.indexOf(e);
+  const col  = colShift(S.mCol, mIdx);
+  const row  = S.hRow + eIdx + 1;
+  document.getElementById('cellRef').textContent = `${S.tab}!${col}${row}`;
+  prev.classList.remove('hidden');
+}
+
+// ─── Save ─────────────────────────────────────────────────────────────────
+async function save() {
+  const month   = document.getElementById('selM').value;
+  const expense = document.getElementById('selE').value;
+  const amount  = parseFloat(document.getElementById('inpAmt').value);
+
+  if (!month || !expense) { toast('Select a month and expense type', 'err'); return; }
+  if (!amount || amount <= 0) { toast('Enter a valid amount', 'err'); return; }
+
+  const mIdx = S.months.indexOf(month);
+  const eIdx = S.expenses.indexOf(expense);
+  const col  = colShift(S.mCol, mIdx);
+  const row  = S.hRow + eIdx + 1;
+  const cell = `${S.tab}!${col}${row}`;
+
+  const entry = {
+    month, expense, amount, cell,
+    time: new Date().toLocaleString('en-CA', { month:'short', day:'numeric', hour:'2-digit', minute:'2-digit' })
+  };
+
+  const btn = document.getElementById('btnSave');
+  btn.disabled = true; btn.textContent = 'Saving…';
+
+  if (S.demo) {
+    await new Promise(r => setTimeout(r, 500));
+    addRecent(entry);
+    document.getElementById('inpAmt').value = '';
+    toast(`Demo: $${amount.toFixed(2)} logged to ${cell}`, 'ok');
+    btn.disabled = false; btn.textContent = 'Save to Google Sheets';
+    return;
+  }
+
+  try {
+    const url = `https://sheets.googleapis.com/v4/spreadsheets/${S.sheetId}/values/${encodeURIComponent(cell)}?valueInputOption=USER_ENTERED`;
+    const res = await fetch(url, {
+      method: 'PUT',
+      headers: { 'Authorization': 'Bearer ' + S.token, 'Content-Type': 'application/json' },
+      body: JSON.stringify({ range: cell, majorDimension: 'ROWS', values: [[amount]] })
+    });
+    const data = await res.json();
+    if (data.error) throw new Error(data.error.message);
+
+    addRecent(entry);
+    document.getElementById('inpAmt').value = '';
+    toast(`Saved $${amount.toFixed(2)} → ${cell}`, 'ok');
+
+    // Haptic feedback on iOS
+    if (navigator.vibrate) navigator.vibrate(30);
+  } catch(e) {
+    const msg = e.message.includes('401') || e.message.includes('invalid_token')
+      ? 'Token expired — re-paste in Setup tab'
+      : e.message;
+    toast(msg, 'err');
+  }
+
+  btn.disabled = false; btn.textContent = 'Save to Google Sheets';
+}
+
+function addRecent(entry) {
+  S.recent.unshift(entry);
+  try { localStorage.setItem('et_recent', JSON.stringify(S.recent.slice(0,50))); } catch(e) {}
+  renderRecent();
+}
+
+// ─── Recent ───────────────────────────────────────────────────────────────
+function renderRecent() {
+  const el = document.getElementById('recentList');
+  if (!S.recent.length) {
+    el.innerHTML = '<div style="color:var(--text3);font-size:14px;text-align:center;padding:3rem 0">No entries yet</div>';
+    return;
+  }
+  el.innerHTML = S.recent.slice(0, 30).map(e => `
+    <div class="ri">
+      <div class="ri-l">
+        <div class="ri-type">${e.expense}</div>
+        <div class="ri-meta">${e.month} · ${e.cell} · ${e.time}</div>
+      </div>
+      <div class="ri-amt">$${e.amount.toFixed(2)}</div>
+    </div>`).join('');
+}
+
+// Restore recent from localStorage
+try {
+  const r = JSON.parse(localStorage.getItem('et_recent') || '[]');
+  if (r.length) { S.recent = r; renderRecent(); }
+} catch(e) {}
+</script>
+</body>
+</html>
